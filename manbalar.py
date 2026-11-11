@@ -204,19 +204,27 @@ def uysot_struktura():
             pp = (data.get("props") or {}).get("pageProps") or {}
             qs = ((pp.get("dehydratedState") or {}).get("queries")) or []
             out.append("  queries soni: %d" % len(qs))
-            loyihalar = _loyiha_royxatlari(pp)
-            if loyihalar:
-                for yol, uz, keys, namuna in loyihalar[:4]:
-                    out.append("  ✅ LOYIHA ro'yxat: %s (len=%d)" % (yol, uz))
-                    out.append("     keys: %s" % keys)
-                    out.append("     namuna: %s" % namuna)
-            else:
-                out.append("  loyiha ro'yxat topilmadi — queries kalitlari:")
-                for i, q in enumerate(qs[:12]):
-                    d = (q.get("state") or {}).get("data")
-                    shed = (list(d.keys())[:8] if isinstance(d, dict) else
-                            ("list[%d]" % len(d) if isinstance(d, list) else type(d).__name__))
-                    out.append("     q[%d] key=%s data=%s" % (i, str(q.get("queryKey"))[:40], shed))
+            for i, q in enumerate(qs):
+                key = str(q.get("queryKey"))[:46]
+                d = (q.get("state") or {}).get("data")
+                if isinstance(d, list):
+                    ek = list(d[0].keys())[:14] if (d and isinstance(d[0], dict)) else "-"
+                    out.append("  q[%d] %s -> list[%d] keys=%s" % (i, key, len(d), ek))
+                elif isinstance(d, dict):
+                    sub = None
+                    for sk in ("data", "results", "items", "complexes", "novostroyki", "list"):
+                        v = d.get(sk)
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            sub = (sk, v)
+                            break
+                    if sub:
+                        out.append("  q[%d] %s -> {%s} | %s:list[%d] keys=%s"
+                                   % (i, key, ",".join(list(d.keys())[:6]), sub[0], len(sub[1]),
+                                      list(sub[1][0].keys())[:16]))
+                    else:
+                        out.append("  q[%d] %s -> dict{%s}" % (i, key, ",".join(list(d.keys())[:10])))
+                else:
+                    out.append("  q[%d] %s -> %s" % (i, key, type(d).__name__))
             return "\n".join(out)[:3800]
         except Exception as ex:
             out.append("  xato: %s" % ex)
