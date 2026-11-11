@@ -124,59 +124,107 @@ def rss_scan():
 
 
 # ---------------- Manba 3: uysot.uz (novostroyka + quruvchi) ----------------
+def _text(v):
+    """str / {uz,ru} / {name:...} dan matn chiqaradi."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v.strip()
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, dict):
+        for k in ("uz", "name", "title", "ru", "en"):
+            if v.get(k):
+                return _text(v[k])
+    return ""
+
+
+def _kompleks_obj(c):
+    """uysot kompleks elementidan bizning obyekt (yoki None)."""
+    if not isinstance(c, dict):
+        return None
+    nom = _text(c.get("name") or c.get("title"))
+    if not nom:
+        return None
+    slug = c.get("slug") or c.get("id") or ""
+    link = "https://uysot.uz/uz/novostroyki/%s" % slug if slug else "https://uysot.uz"
+    dev = _text(c.get("builder") or c.get("developer") or c.get("company") or c.get("zastroyshik"))
+    dist = _text(c.get("district") or c.get("city"))
+    reg = _text(c.get("region"))
+    addr = _text(c.get("address"))
+    joy = ", ".join(x for x in (dist, reg) if x) or addr
+    holat = _text(c.get("status") or c.get("build_status") or c.get("state"))
+    sana = _text(c.get("deadline") or c.get("date_build") or c.get("build_year") or c.get("quarter"))
+    narx = _text(c.get("min_price") or c.get("price_from") or c.get("price"))
+    if narx and "narx" not in holat.lower():
+        holat = (holat + (" · " if holat else "") + "narx: %s" % narx)
+    rasm = ""
+    imgs = c.get("images") or c.get("photo") or c.get("logo")
+    if isinstance(imgs, list) and imgs:
+        rasm = _text(imgs[0]) if isinstance(imgs[0], (str, dict)) else ""
+    elif isinstance(imgs, str):
+        rasm = imgs
+    return {"kalit": _kalit(link, nom), "manba": "uysot.uz", "nom": nom, "url": link,
+            "joy": joy, "quruvchi": dev, "holat": holat, "sana": sana, "rasm": rasm}
+
+
 def uysot_scan():
     items, detail = [], []
     import json as _json
     for url in ["https://uysot.uz/uz/uzbekistan/novostroyki",
+                "https://uysot.uz/uz/gorod-tashkent/novostroyki",
                 "https://uysot.uz/uzbekistan/novostroyki"]:
         try:
             r = requests.get(url, headers=HEAD, timeout=20)
-            st = r.status_code
-            if st != 200 or not r.text:
-                detail.append("uysot=%s" % st)
+            if r.status_code != 200 or not r.text:
+                detail.append("%s" % r.status_code)
                 continue
             m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', r.text, re.S)
             if not m:
-                detail.append("uysot=200,json=yo'q")
+                detail.append("json yo'q")
                 continue
             data = _json.loads(m.group(1))
-            objs = _json_dan_obyektlar(data)
-            for it in objs:
-                nom = it.get("name") or it.get("title") or ""
-                if not nom:
-                    continue
-                slug = it.get("slug") or it.get("id") or ""
-                link = "https://uysot.uz/uz/novostroyki/%s" % slug if slug else url
-                d = it.get("builder") or it.get("developer") or ""
-                dev = d.get("name") if isinstance(d, dict) else (d if isinstance(d, str) else "")
-                items.append({"kalit": _kalit(link, nom), "manba": "uysot.uz", "nom": nom,
-                              "url": link,
-                              "joy": str(it.get("district") or it.get("region") or it.get("address") or ""),
-                              "quruvchi": str(dev or ""),
-                              "holat": str(it.get("status") or it.get("state") or ""),
-                              "sana": str(it.get("deadline") or ""), "rasm": ""})
-            detail.append("uysot=200,obj=%d" % len(objs))
+            qs = (((data.get("props") or {}).get("pageProps") or {}).get("dehydratedState") or {}).get("queries") or []
+            # residential_complexes query'ini topamiz
+            cq = None
+            for q in qs:
+                key = q.get("queryKey")
+                keys = key if isinstance(key, list) else [key]
+                if any("residential_complex" in str(x).lower() or "complex" in str(x).lower() for x in keys):
+                    cq = q
+                    break
+            if not cq:
+                detail.append("complex query yo'q")
+                continue
+            d = (cq.get("state") or {}).get("data")
+            pages = d.get("pages") if isinstance(d, dict) else (d if isinstance(d, list) else [])
+            komplekslar = []
+            for pg in (pages or []):
+                if isinstance(pg, list):
+                    komplekslar += pg
+                elif isinstance(pg, dict):
+                    qoshildi = False
+                    for sk in ("data", "results", "items", "complexes", "novostroyki", "list"):
+                        if isinstance(pg.get(sk), list):
+                            komplekslar += pg[sk]
+                            qoshildi = True
+                            break
+                    if not qoshildi and pg.get("name"):
+                        komplekslar.append(pg)
+            n = 0
+            namuna_keys = ""
+            for c in komplekslar:
+                if isinstance(c, dict) and not namuna_keys:
+                    namuna_keys = ",".join(list(c.keys())[:12])
+                obj = _kompleks_obj(c)
+                if obj:
+                    items.append(obj)
+                    n += 1
+            detail.append("complex=%d [%s]" % (n, namuna_keys))
             break
-        except Exception:
-            detail.append("uysot=xato")
+        except Exception as ex:
+            detail.append("xato:%s" % type(ex).__name__)
     return items, " | ".join(detail)
-
-
-def _json_dan_obyektlar(data, chuqur=0):
-    topildi = []
-    if chuqur > 8:
-        return topildi
-    if isinstance(data, dict):
-        kalitlar = set(k.lower() for k in data.keys())
-        if ("name" in kalitlar or "title" in kalitlar) and \
-           ("slug" in kalitlar or "address" in kalitlar or "district" in kalitlar or "builder" in kalitlar):
-            topildi.append(data)
-        for v in data.values():
-            topildi += _json_dan_obyektlar(v, chuqur + 1)
-    elif isinstance(data, list):
-        for v in data:
-            topildi += _json_dan_obyektlar(v, chuqur + 1)
-    return topildi
 
 
 def uysot_struktura():
