@@ -201,38 +201,51 @@ def uysot_struktura():
                         out.append("  topildi belgisi: %s" % pat)
                 continue
             data = _json.loads(m.group(1))
-            out.append("  top keys: %s" % list(data.keys()))
             pp = (data.get("props") or {}).get("pageProps") or {}
-            out.append("  pageProps keys: %s" % list(pp.keys()))
-            best = _eng_uzun_royxat(pp)
-            if best:
-                yol, lst = best
-                out.append("  eng uzun royxat: '%s' (len=%d)" % (yol, len(lst)))
-                if lst and isinstance(lst[0], dict):
-                    out.append("  element keys: %s" % list(lst[0].keys()))
+            qs = ((pp.get("dehydratedState") or {}).get("queries")) or []
+            out.append("  queries soni: %d" % len(qs))
+            loyihalar = _loyiha_royxatlari(pp)
+            if loyihalar:
+                for yol, uz, keys, namuna in loyihalar[:4]:
+                    out.append("  ✅ LOYIHA ro'yxat: %s (len=%d)" % (yol, uz))
+                    out.append("     keys: %s" % keys)
+                    out.append("     namuna: %s" % namuna)
             else:
-                out.append("  pageProps ichida uzun royxat topilmadi")
+                out.append("  loyiha ro'yxat topilmadi — queries kalitlari:")
+                for i, q in enumerate(qs[:12]):
+                    d = (q.get("state") or {}).get("data")
+                    shed = (list(d.keys())[:8] if isinstance(d, dict) else
+                            ("list[%d]" % len(d) if isinstance(d, list) else type(d).__name__))
+                    out.append("     q[%d] key=%s data=%s" % (i, str(q.get("queryKey"))[:40], shed))
             return "\n".join(out)[:3800]
         except Exception as ex:
             out.append("  xato: %s" % ex)
     return "\n".join(out)[:3800]
 
 
-def _eng_uzun_royxat(data, yol="", chuqur=0, eng=None):
-    if chuqur > 7:
-        return eng
+_LOYIHA_BELGI = {"builder", "developer", "zastroyshik", "price", "min_price", "minprice",
+                 "district", "address", "region", "rooms", "deadline", "complex", "metros",
+                 "price_from", "latitude", "longitude", "photo", "images"}
+
+
+def _loyiha_royxatlari(data, yol="", chuqur=0, topildi=None):
+    """name/title bor VA quruvchi/narx/joy kabi belgili elementlardan iborat ro'yxatlar."""
+    if topildi is None:
+        topildi = []
+    if chuqur > 9:
+        return topildi
     if isinstance(data, list):
-        if isinstance(eng, tuple):
-            if len(data) > len(eng[1]):
-                eng = (yol, data)
-        else:
-            eng = (yol, data)
-        for i, v in enumerate(data[:3]):
-            eng = _eng_uzun_royxat(v, "%s[%d]" % (yol, i), chuqur + 1, eng)
+        if data and isinstance(data[0], dict):
+            ks = set(k.lower() for k in data[0].keys())
+            if ("name" in ks or "title" in ks) and (ks & _LOYIHA_BELGI):
+                nm = data[0].get("name") or data[0].get("title")
+                topildi.append((yol, len(data), list(data[0].keys())[:24], str(nm)[:40]))
+        for i, v in enumerate(data[:2]):
+            _loyiha_royxatlari(v, "%s[%d]" % (yol, i), chuqur + 1, topildi)
     elif isinstance(data, dict):
         for k, v in data.items():
-            eng = _eng_uzun_royxat(v, "%s.%s" % (yol, k), chuqur + 1, eng)
-    return eng
+            _loyiha_royxatlari(v, "%s.%s" % (yol, k), chuqur + 1, topildi)
+    return topildi
 
 
 # ---------------- Hammasi ----------------
