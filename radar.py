@@ -67,14 +67,24 @@ async def _yubor(app, it):
             log.info("yuborishda xato %s: %s", uid, e)
 
 
-async def _skan_qil(app, report_to=None):
-    """Bir marta skan: yangi obyektlarni topib yuboradi. Qaytadi: (yangi_soni, hisobot)."""
+async def _yubor_uid(app, it, uid):
+    try:
+        await app.bot.send_message(uid, _xabar_matn(it), parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        log.info("yuborishda xato %s: %s", uid, e)
+
+
+async def _skan_qil(app, report_to=None, extra_uid=None):
+    """Bir marta skan: yangi obyektlarni topib yuboradi. Qaytadi: (yangi_soni, hisobot).
+    extra_uid — (test uchun) topilgan yangi obyektlar shu chatga ham yuboriladi."""
     obyektlar, hisobot = await asyncio.to_thread(manbalar.hammasi)
     yangi = 0
     for it in obyektlar:
         if db.yangi_mi(it["kalit"]):
             if db.qosh(it):
                 await _yubor(app, it)
+                if extra_uid is not None and extra_uid not in _qabul():
+                    await _yubor_uid(app, it, extra_uid)
                 db.yuborildi_belgila(it["kalit"])
                 yangi += 1
     log.info("skan: %s obyekt, %s yangi, manba: %s", len(obyektlar), yangi, hisobot)
@@ -111,19 +121,24 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def test_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in _qabul():
-        return
-    await update.message.reply_text("⏳ Tekshiryapman… (manbalarni skan qilyapman)")
+    chat = update.effective_chat.id
+    await update.message.reply_text("⏳ Tekshiryapman… (manbalarni skan qilyapman, 10-20 soniya)")
     try:
-        await _skan_qil(ctx.application, report_to=update.effective_chat.id)
+        yangi, hisobot = await _skan_qil(ctx.application, report_to=chat, extra_uid=chat)
+        # Agar yangi topilmasa — oxirgi saqlanganlardan namuna ko'rsatamiz
+        if yangi == 0:
+            rows = db.oxirgilar(3)
+            if rows:
+                await ctx.application.bot.send_message(
+                    chat, "👇 Oxirgi topilganlardan namuna (qanday ko'rinishini ko'rsatish uchun):")
+                for r in rows:
+                    await _yubor_uid(ctx.application, r, chat)
     except Exception as e:
         log.exception("test_cmd")
         await update.message.reply_text("❌ Xato: %s" % e)
 
 
 async def oxirgi_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in _qabul():
-        return
     rows = db.oxirgilar(15)
     if not rows:
         await update.message.reply_text("Hozircha hech narsa topilmagan. /test bilan sinab ko'ring.")
