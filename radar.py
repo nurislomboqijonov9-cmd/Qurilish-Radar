@@ -155,6 +155,22 @@ async def id_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Sizning ID: %s" % update.effective_user.id)
 
 
+async def debug_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """uysot ma'lumot tuzilishini ko'rsatadi (parser yozish uchun)."""
+    await update.message.reply_text("⏳ uysot tuzilishini tekshiryapman…")
+    try:
+        txt = await asyncio.to_thread(manbalar.uysot_struktura)
+    except Exception as e:
+        txt = "xato: %s" % e
+    await update.message.reply_text("🔧 uysot struktura:\n\n%s" % (txt or "bo'sh"))
+
+
+async def tozala_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Bazani tozalaydi (eski yangilik axlatini o'chirish uchun)."""
+    n = db.tozala()
+    await update.message.reply_text("🧹 Baza tozalandi (%s yozuv o'chdi)." % n)
+
+
 async def run():
     db.init_db()
     app = Application.builder().token(BOT_TOKEN).build()
@@ -162,6 +178,8 @@ async def run():
     app.add_handler(CommandHandler("test", test_cmd))
     app.add_handler(CommandHandler("oxirgi", oxirgi_cmd))
     app.add_handler(CommandHandler("id", id_cmd))
+    app.add_handler(CommandHandler("debug", debug_cmd))
+    app.add_handler(CommandHandler("tozala", tozala_cmd))
 
     await app.initialize()
     await app.start()

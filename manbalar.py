@@ -179,11 +179,69 @@ def _json_dan_obyektlar(data, chuqur=0):
     return topildi
 
 
+def uysot_struktura():
+    """Diagnostika: uysot sahifasidagi __NEXT_DATA__ tuzilishini ko'rsatadi,
+    shunda to'g'ri parser yozamiz."""
+    import json as _json
+    out = []
+    for url in ["https://uysot.uz/uz/uzbekistan/novostroyki",
+                "https://uysot.uz/uzbekistan/novostroyki",
+                "https://uysot.uz/en/uzbekistan/novostroyki"]:
+        try:
+            r = requests.get(url, headers=HEAD, timeout=20)
+            out.append("URL: %s -> %s (%d bayt)" % (url.split("uysot.uz")[1], r.status_code, len(r.text or "")))
+            if r.status_code != 200 or not r.text:
+                continue
+            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', r.text, re.S)
+            if not m:
+                out.append("  __NEXT_DATA__ YO'Q. 'novostroyki' so'zi bor: %s" % ("novostroyki" in r.text))
+                # boshqa katta JSON bormi?
+                for pat in ("self.__next_f", "application/json", "window.__NUXT__"):
+                    if pat in r.text:
+                        out.append("  topildi belgisi: %s" % pat)
+                continue
+            data = _json.loads(m.group(1))
+            out.append("  top keys: %s" % list(data.keys()))
+            pp = (data.get("props") or {}).get("pageProps") or {}
+            out.append("  pageProps keys: %s" % list(pp.keys()))
+            best = _eng_uzun_royxat(pp)
+            if best:
+                yol, lst = best
+                out.append("  eng uzun royxat: '%s' (len=%d)" % (yol, len(lst)))
+                if lst and isinstance(lst[0], dict):
+                    out.append("  element keys: %s" % list(lst[0].keys()))
+            else:
+                out.append("  pageProps ichida uzun royxat topilmadi")
+            return "\n".join(out)[:3800]
+        except Exception as ex:
+            out.append("  xato: %s" % ex)
+    return "\n".join(out)[:3800]
+
+
+def _eng_uzun_royxat(data, yol="", chuqur=0, eng=None):
+    if chuqur > 7:
+        return eng
+    if isinstance(data, list):
+        if isinstance(eng, tuple):
+            if len(data) > len(eng[1]):
+                eng = (yol, data)
+        else:
+            eng = (yol, data)
+        for i, v in enumerate(data[:3]):
+            eng = _eng_uzun_royxat(v, "%s[%d]" % (yol, i), chuqur + 1, eng)
+    elif isinstance(data, dict):
+        for k, v in data.items():
+            eng = _eng_uzun_royxat(v, "%s.%s" % (yol, k), chuqur + 1, eng)
+    return eng
+
+
 # ---------------- Hammasi ----------------
 def hammasi():
-    """Qaytadi: (uniq_items, hisobot_dict). hisobot — har manba diagnostikasi."""
+    """Qaytadi: (uniq_items, hisobot_dict). hisobot — har manba diagnostikasi.
+    Hozircha faqat haqiqiy loyiha manbasi (uysot). Yangilik manbalari o'chirilgan
+    (ular maqola edi, loyiha emas)."""
     hisobot, natija = {}, []
-    for nom, fn in (("News (Google)", gnews_scan), ("RSS", rss_scan), ("uysot", uysot_scan)):
+    for nom, fn in (("uysot", uysot_scan),):
         try:
             items, detail = fn()
             natija += items

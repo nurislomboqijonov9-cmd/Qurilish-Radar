@@ -81,3 +81,13 @@ def jami():
     n = con.execute("SELECT COUNT(*) FROM topilgan").fetchone()[0]
     con.close()
     return n
+
+
+def tozala():
+    """Barcha topilgan yozuvlarni o'chiradi. Qaytadi: o'chirilgan soni."""
+    con = _con()
+    n = con.execute("SELECT COUNT(*) FROM topilgan").fetchone()[0]
+    con.execute("DELETE FROM topilgan")
+    con.commit()
+    con.close()
+    return n
